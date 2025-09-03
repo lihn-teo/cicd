@@ -1,0 +1,125 @@
+1. 在 VS Code 里创建工程目录
+
+打开 VS Code，建一个工程，比如：
+
+localstack_cdk_project/
+
+2. requirements.txt
+
+在根目录放：
+
+aws-cdk-lib
+constructs
+
+
+（如果你打算用 boto3 直接写 API，也可以加上 boto3）
+
+3. app.py
+#!/usr/bin/env python3
+import aws_cdk as cdk
+from localstack_cdk_project.localstack_cdk_project_stack import LocalStackInfraStack
+
+app = cdk.App()
+LocalStackInfraStack(app, "LocalStackInfraStack")
+app.synth()
+
+4. localstack_cdk_project/localstack_cdk_project_stack.py
+from aws_cdk import (
+    Stack,
+    aws_ec2 as ec2,
+    aws_ecr as ecr,
+    aws_rds as rds,
+)
+from constructs import Construct
+
+
+class LocalStackInfraStack(Stack):
+
+    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+        super().__init__(scope, construct_id, **kwargs)
+
+        # VPC
+        vpc = ec2.Vpc(
+            self, "MyVpc",
+            max_azs=2,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="public", subnet_type=ec2.SubnetType.PUBLIC
+                ),
+                ec2.SubnetConfiguration(
+                    name="private", subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                ),
+            ]
+        )
+
+        # ECR Repository
+        repo = ecr.Repository(
+            self, "MyRepository",
+            repository_name="my-sample-repo"
+        )
+
+        # Aurora Cluster (注意：LocalStack 对 Aurora 支持有限)
+        cluster = rds.DatabaseCluster(
+            self, "AuroraCluster",
+            engine=rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
+            instance_props=rds.InstanceProps(
+                vpc=vpc,
+                instance_type=ec2.InstanceType("t3.medium"),
+                vpc_subnets=ec2.SubnetSelection(
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                )
+            ),
+            default_database_name="mydb"
+        )
+
+5. 配置 VS Code Python 环境
+
+在终端执行：
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 安装 AWS CDK CLI
+npm install -g aws-cdk
+
+6. 启动 LocalStack
+
+在 VS Code 终端运行：
+
+localstack start -d
+
+
+配置环境变量（可以放到 VS Code 的 .env 文件里）：
+
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export LOCALSTACK_ENDPOINT=http://localhost:4566
+
+7. 部署
+
+在 VS Code 终端执行：
+
+cdk bootstrap --context endpoint=http://localhost:4566
+cdk deploy --context endpoint=http://localhost:4566
+
+
+部署完成后，就能在 LocalStack 中看到 VPC、ECR、Aurora(Postgres)。
+
+⚠️ 提示：
+
+LocalStack 的 Aurora 功能不完全（可能不支持集群，只支持单个 RDS 实例）。
+
+如果 Aurora 出现错误，可以换成：
+
+rds.DatabaseInstance(
+    self, "MyRdsInstance",
+    engine=rds.DatabaseInstanceEngine.postgres(version=rds.PostgresEngineVersion.VER_13),
+    vpc=vpc,
+    instance_type=ec2.InstanceType("t3.micro"),
+    allocated_storage=20,
+    database_name="mydb"
+)
+
+
+要不要我帮你写一个 VS Code .env 文件 和 launch.json，这样你可以直接点 ▶️ 运行就部署到 LocalStack？
