@@ -1,0 +1,77 @@
+✅ 版本 2：不带 EC2 的环境
+
+localstack_cdk_project/localstack_cdk_project_stack.py
+
+from aws_cdk import (
+    Stack,
+    aws_ec2 as ec2,
+    aws_ecr as ecr,
+    aws_rds as rds,
+)
+from constructs import Construct
+
+
+class LocalStackInfraStackNoEC2(Stack):
+
+    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+        super().__init__(scope, construct_id, **kwargs)
+
+        # VPC
+        vpc = ec2.Vpc(
+            self, "MyVpc",
+            max_azs=2,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="public", subnet_type=ec2.SubnetType.PUBLIC
+                ),
+                ec2.SubnetConfiguration(
+                    name="private", subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                ),
+            ]
+        )
+
+        # ECR Repository
+        repo = ecr.Repository(
+            self, "MyRepository",
+            repository_name="my-sample-repo"
+        )
+
+        # Aurora Cluster (可能 LocalStack 不支持，用 RDS 替代)
+        db_cluster = rds.DatabaseCluster(
+            self, "AuroraCluster",
+            engine=rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
+            instance_props=rds.InstanceProps(
+                vpc=vpc,
+                instance_type=ec2.InstanceType("t3.medium"),
+                vpc_subnets=ec2.SubnetSelection(
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                )
+            ),
+            default_database_name="mydb"
+        )
+
+✅ 如何在 VS Code 切换版本
+
+在 app.py 里控制用哪个 Stack：
+
+#!/usr/bin/env python3
+import aws_cdk as cdk
+from localstack_cdk_project.localstack_cdk_project_stack import (
+    LocalStackInfraStackWithEC2,
+    LocalStackInfraStackNoEC2
+)
+
+app = cdk.App()
+
+# 带 EC2 的版本
+# LocalStackInfraStackWithEC2(app, "LocalStackWithEC2")
+
+# 不带 EC2 的版本
+LocalStackInfraStackNoEC2(app, "LocalStackNoEC2")
+
+app.synth()
+
+
+只要注释/取消注释，就能在 VS Code 一键切换版本。
+
+要不要我帮你写一个 VS Code launch.json 配置，这样你可以直接点 ▶️ 自动执行 cdk deploy，不用在终端输入命令？
