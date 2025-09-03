@@ -1,0 +1,9 @@
+✅ 总结对比
+功能/版本	Community (免费)	Pro (付费)	Enterprise (企业)
+常见服务 (S3, SQS, Lambda)	✅	✅	✅
+Aurora / RDS 完整支持	❌ (只有 API Mock)	⚠️ (部分支持)	⚠️ (部分支持)
+Step Functions	❌	✅	✅
+EKS / Cognito	❌	✅	✅
+团队协作 / 管理控制	❌	❌	✅
+SLA / 商业支持	❌	⚠️ (社区支持为主)	✅
+价格	免费	按用户/月订阅	企业合同定制
