@@ -1,0 +1,187 @@
+明白了，你现在的目标是在 LocalStack 上用 Python + CDK/SDK 来构建一个基础 AWS 环境（VPC、ECS、Aurora），之后再追加 Lambda，并在 VSCode 上执行，同时你已经用 Docker 建立了一个项目框架。我们可以按以下步骤来规划和实现：
+
+1️⃣ 准备工作
+环境确认
+
+LocalStack 已通过 Docker 启动
+
+docker run --rm -it -p 4566:4566 -p 4571:4571 localstack/localstack
+
+
+Python 环境
+
+建议 Python 3.11+
+
+创建虚拟环境：
+
+python -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate     # Windows
+
+
+安装 AWS CDK/SDK
+
+pip install aws-cdk-lib constructs boto3 localstack-client
+
+
+如果想用 CDK 本地化：
+
+pip install aws-cdk-local
+
+
+⚠️ 注意：aws-cdk-local 有些版本可能在 pip 上找不到，可以用 npm 安装 Node 版本：
+
+npm install -g aws-cdk-local
+
+配置 VSCode
+
+安装 Python 插件和 Docker 插件
+
+配置 VSCode terminal 指向虚拟环境
+
+可以把 LocalStack Endpoint 配置为环境变量：
+
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export LOCALSTACK_HOST=localhost
+export EDGE_PORT=4566
+
+2️⃣ 项目结构建议
+my_localstack_project/
+│
+├── app.py               # CDK/SDK入口文件
+├── cdk.json             # CDK项目配置
+├── requirements.txt
+├── stacks/
+│   ├── vpc_stack.py
+│   ├── ecs_stack.py
+│   ├── aurora_stack.py
+│   └── lambda_stack.py
+├── lambda_functions/
+│   └── my_lambda.py
+└── README.md
+
+
+每个 stack 可以独立维护，方便后期追加 Lambda。
+
+3️⃣ 编写 CDK Stack 示例（Python）
+VPC Stack
+from aws_cdk import (
+    Stack,
+    aws_ec2 as ec2
+)
+from constructs import Construct
+
+class VpcStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        self.vpc = ec2.Vpc(
+            self, "MyVpc",
+            max_azs=2,
+            nat_gateways=0
+        )
+
+Aurora Stack
+from aws_cdk import (
+    Stack,
+    aws_rds as rds,
+    aws_ec2 as ec2
+)
+from constructs import Construct
+
+class AuroraStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, vpc: ec2.Vpc, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        self.db = rds.DatabaseCluster(
+            self, "MyAurora",
+            engine=rds.DatabaseClusterEngine.AURORA_MYSQL,
+            instance_props=rds.InstanceProps(
+                vpc=vpc,
+                instance_type=ec2.InstanceType.of(
+                    ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL
+                )
+            )
+        )
+
+ECS Stack
+from aws_cdk import (
+    Stack,
+    aws_ecs as ecs,
+    aws_ec2 as ec2
+)
+from constructs import Construct
+
+class EcsStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, vpc: ec2.Vpc, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        cluster = ecs.Cluster(
+            self, "EcsCluster",
+            vpc=vpc
+        )
+
+Lambda Stack（后期追加）
+from aws_cdk import (
+    Stack,
+    aws_lambda as _lambda
+)
+from constructs import Construct
+
+class LambdaStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        my_lambda = _lambda.Function(
+            self, "MyLambda",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="my_lambda.handler",
+            code=_lambda.Code.from_asset("lambda_functions")
+        )
+
+4️⃣ app.py 入口
+#!/usr/bin/env python3
+import os
+from aws_cdk import App
+from stacks.vpc_stack import VpcStack
+from stacks.ecs_stack import EcsStack
+from stacks.aurora_stack import AuroraStack
+from stacks.lambda_stack import LambdaStack
+
+app = App()
+
+vpc_stack = VpcStack(app, "VpcStack")
+ecs_stack = EcsStack(app, "EcsStack", vpc=vpc_stack.vpc)
+aurora_stack = AuroraStack(app, "AuroraStack", vpc=vpc_stack.vpc)
+lambda_stack = LambdaStack(app, "LambdaStack")
+
+app.synth()
+
+5️⃣ 在 LocalStack 上部署
+
+如果用 CDK Local：
+
+cdk bootstrap --profile default
+cdk deploy --all --require-approval never
+
+
+或者直接用 boto3 + localstack-client 在 Python 中操作 LocalStack API：
+
+import boto3
+from localstack_client.session import Session
+
+session = Session()
+ecs_client = session.client('ecs', endpoint_url="http://localhost:4566")
+vpcs = session.client('ec2').describe_vpcs()
+print(vpcs)
+
+
+💡 Tips:
+
+本地 LocalStack 对 ECS 和 RDS 模拟有限，不一定支持完整功能，但可以看到资源 API 已创建。
+
+Lambda 部署后可以直接用 boto3 invoke 或 LocalStack Web UI 测试。
+
+推荐先在 CDK 上跑成功，再考虑 SDK 脚本化。
