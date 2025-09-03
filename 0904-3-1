@@ -1,0 +1,61 @@
+✅ 版本 1：带 EC2 的环境
+
+localstack_cdk_project/localstack_cdk_project_stack.py
+
+from aws_cdk import (
+    Stack,
+    aws_ec2 as ec2,
+    aws_ecr as ecr,
+    aws_rds as rds,
+)
+from constructs import Construct
+
+
+class LocalStackInfraStackWithEC2(Stack):
+
+    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+        super().__init__(scope, construct_id, **kwargs)
+
+        # VPC
+        vpc = ec2.Vpc(
+            self, "MyVpc",
+            max_azs=2,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="public", subnet_type=ec2.SubnetType.PUBLIC
+                ),
+                ec2.SubnetConfiguration(
+                    name="private", subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                ),
+            ]
+        )
+
+        # ECR Repository
+        repo = ecr.Repository(
+            self, "MyRepository",
+            repository_name="my-sample-repo"
+        )
+
+        # EC2 Instance
+        ec2_instance = ec2.Instance(
+            self, "MyEC2",
+            instance_type=ec2.InstanceType("t3.micro"),
+            machine_image=ec2.MachineImage.generic_linux({
+                "us-east-1": "ami-12345678"  # LocalStack 里不会实际启动，写个假 AMI
+            }),
+            vpc=vpc
+        )
+
+        # Aurora Cluster (可能 LocalStack 不支持，用 RDS 代替)
+        db_cluster = rds.DatabaseCluster(
+            self, "AuroraCluster",
+            engine=rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
+            instance_props=rds.InstanceProps(
+                vpc=vpc,
+                instance_type=ec2.InstanceType("t3.medium"),
+                vpc_subnets=ec2.SubnetSelection(
+                    subnet_type=ec2.SubnetType.PRIVATE_WITH_EGRESS
+                )
+            ),
+            default_database_name="mydb"
+        )
