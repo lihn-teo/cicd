@@ -1,0 +1,131 @@
+明白了，你只需要 CDK 来在 LocalStack 上构建 VPC、ECS、Aurora，并可后期追加 Lambda，不用单独用 boto3/SDK。我给你整理一个 完整可运行的 CDK Python 工程模板，可以直接在 VSCode 上执行。
+
+1️⃣ 项目结构
+my_localstack_project/
+│
+├── app.py                  # CDK入口
+├── cdk.json                # CDK配置
+├── requirements.txt        # Python依赖
+├── stacks/
+│   ├── vpc_stack.py
+│   ├── ecs_stack.py
+│   ├── aurora_stack.py
+│   └── lambda_stack.py
+└── lambda_functions/
+    └── my_lambda.py        # Lambda代码
+
+2️⃣ requirements.txt
+aws-cdk-lib==2.1020.0
+constructs>=10.0.0
+
+
+⚠️ 如果想用 cdk-local 部署到 LocalStack，可全局安装 npm install -g aws-cdk-local，CDK Python 本身不需要额外 SDK。
+
+3️⃣ stacks/vpc_stack.py
+from aws_cdk import Stack, aws_ec2 as ec2
+from constructs import Construct
+
+class VpcStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        self.vpc = ec2.Vpc(
+            self, "MyVpc",
+            max_azs=2,
+            nat_gateways=0
+        )
+
+4️⃣ stacks/aurora_stack.py
+from aws_cdk import Stack, aws_rds as rds, aws_ec2 as ec2
+from constructs import Construct
+
+class AuroraStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, vpc: ec2.Vpc, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        self.db_cluster = rds.DatabaseCluster(
+            self, "MyAuroraCluster",
+            engine=rds.DatabaseClusterEngine.AURORA_MYSQL,
+            instance_props=rds.InstanceProps(
+                instance_type=ec2.InstanceType.of(
+                    ec2.InstanceClass.BURSTABLE2, ec2.InstanceSize.SMALL
+                ),
+                vpc=vpc
+            )
+        )
+
+5️⃣ stacks/ecs_stack.py
+from aws_cdk import Stack, aws_ecs as ecs, aws_ec2 as ec2
+from constructs import Construct
+
+class EcsStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, vpc: ec2.Vpc, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        self.cluster = ecs.Cluster(
+            self, "EcsCluster",
+            vpc=vpc
+        )
+
+6️⃣ stacks/lambda_stack.py（后期追加 Lambda）
+from aws_cdk import Stack, aws_lambda as _lambda
+from constructs import Construct
+
+class LambdaStack(Stack):
+    def __init__(self, scope: Construct, construct_id: str, **kwargs):
+        super().__init__(scope, construct_id, **kwargs)
+
+        self.my_lambda = _lambda.Function(
+            self, "MyLambda",
+            runtime=_lambda.Runtime.PYTHON_3_11,
+            handler="my_lambda.handler",
+            code=_lambda.Code.from_asset("lambda_functions")
+        )
+
+7️⃣ lambda_functions/my_lambda.py
+def handler(event, context):
+    print("Lambda invoked!")
+    return {"statusCode": 200, "body": "Hello from Lambda"}
+
+8️⃣ app.py
+#!/usr/bin/env python3
+from aws_cdk import App
+from stacks.vpc_stack import VpcStack
+from stacks.ecs_stack import EcsStack
+from stacks.aurora_stack import AuroraStack
+from stacks.lambda_stack import LambdaStack
+
+app = App()
+
+vpc_stack = VpcStack(app, "VpcStack")
+ecs_stack = EcsStack(app, "EcsStack", vpc=vpc_stack.vpc)
+aurora_stack = AuroraStack(app, "AuroraStack", vpc=vpc_stack.vpc)
+lambda_stack = LambdaStack(app, "LambdaStack")  # 后期可注释掉先部署前3个
+
+app.synth()
+
+9️⃣ 部署到 LocalStack
+
+设置 LocalStack 环境变量：
+
+export AWS_ACCESS_KEY_ID=test
+export AWS_SECRET_ACCESS_KEY=test
+export AWS_DEFAULT_REGION=us-east-1
+export EDGE_PORT=4566
+
+
+在 VSCode 终端中执行：
+
+cdk bootstrap --profile default
+cdklocal deploy --all --require-approval never
+
+
+⚠️ cdklocal 是 cdk-local 的命令，与普通 cdk 一样，只是会指向 LocalStack。
+
+✅ 这样你就可以：
+
+先部署 VPC + ECS + Aurora
+
+后期再追加 Lambda
+
+全程用 CDK Python，无需 boto3 SDK
